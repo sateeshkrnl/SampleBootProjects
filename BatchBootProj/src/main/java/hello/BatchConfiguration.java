@@ -7,8 +7,8 @@ import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
-import org.springframework.batch.core.configuration.support.JobRegistryBeanPostProcessor;
-import org.springframework.batch.core.configuration.support.MapJobRegistry;
+import org.springframework.batch.core.explore.JobExplorer;
+import org.springframework.batch.core.explore.support.SimpleJobExplorer;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.launch.support.SimpleJobLauncher;
@@ -39,15 +39,33 @@ public class BatchConfiguration {
 	private DataSource dataSource;
 	
 	@Bean
-	public JobRepository jobRepository() {
+	public MapJobRepositoryFactoryBean  mapJobRepositoryFactory() {
 	    MapJobRepositoryFactoryBean factoryBean = new MapJobRepositoryFactoryBean(new ResourcelessTransactionManager());
 	    try {
-	        JobRepository jobRepository = factoryBean.getObject();
-	        return jobRepository;
+	    	factoryBean.afterPropertiesSet();
+	        return factoryBean;
 	    } catch (Exception e) {
 	        e.printStackTrace();
 	        return null;
 	    }
+	}
+	
+	@Bean
+	public JobRepository jobRepository(MapJobRepositoryFactoryBean factory) throws Exception {
+		return factory.getObject();
+	}
+	
+	@Bean
+    public JobExplorer jobExplorer(MapJobRepositoryFactoryBean factory) {
+        return new SimpleJobExplorer(factory.getJobInstanceDao(), factory.getJobExecutionDao(),
+                factory.getStepExecutionDao(), factory.getExecutionContextDao());
+    }
+	 
+	@Bean
+	public JobLauncher jobLauncher(JobRepository jobRepository){
+		SimpleJobLauncher launcher = new SimpleJobLauncher();
+		launcher.setJobRepository(jobRepository);
+		return launcher;
 	}
 	
 	@Bean
