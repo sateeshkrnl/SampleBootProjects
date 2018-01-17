@@ -48,11 +48,23 @@ import org.springframework.scheduling.quartz.SchedulerFactoryBean;
 @Configuration
 @EnableBatchProcessing
 public class BatchConfiguration {
-	/*@Autowired
+	@Autowired
 	private JobBuilderFactory jobBuilderFactory;
 	
 	@Autowired
-	private StepBuilderFactory stepBuilderFactory;*/
+	private StepBuilderFactory stepBuilderFactory;
+	
+	@Autowired
+	private JobRepository jobRepository;
+	
+	@Autowired
+	private JobLauncher jobLauncher;
+	
+	@Autowired
+	private JobRegistry jobRegistry;
+	
+	@Autowired
+	private JobFactory jobFactory;
 	
 	@Autowired
 	private DataSource dataSource;
@@ -78,13 +90,13 @@ public class BatchConfiguration {
 	}
 	
 	@Bean
-	public JobBuilderFactory jobBuilderFactory(JobRepository jobRepository){
+	public JobBuilderFactory jobBuilderFactory(){
 		JobBuilderFactory factory = new JobBuilderFactory(jobRepository);
 		return factory;
 	}
 	
 	@Bean
-	public StepBuilderFactory stepBuilderFactory(JobRepository jobRepository){
+	public StepBuilderFactory stepBuilderFactory(){
 		StepBuilderFactory factory = new StepBuilderFactory(jobRepository, new DataSourceTransactionManager(dataSource));
 		return factory;
 	}
@@ -93,10 +105,6 @@ public class BatchConfiguration {
 	public JobRegistry jobRegistry(){
 		return new MapJobRegistry();
 	}
-	/*@Bean
-	public JobLocator jobLocator(){
-		SimpleJobLoca
-	}*/
 	
 	@Bean
 	public JobRepository jobRepository(MapJobRepositoryFactoryBean factory) throws Exception {
@@ -110,14 +118,14 @@ public class BatchConfiguration {
     }
 	
 	@Bean
-	JobRegistryBeanPostProcessor jobRegistryBeanPostProcessor() {
+	public JobRegistryBeanPostProcessor jobRegistryBeanPostProcessor() {
 		final JobRegistryBeanPostProcessor processor = new JobRegistryBeanPostProcessor();
 		processor.setJobRegistry(jobRegistry());
 		return processor;
 	}
 
 	@Bean
-	public JobLauncher jobLauncher(JobRepository jobRepository){
+	public JobLauncher jobLauncher(){
 		SimpleJobLauncher launcher = new SimpleJobLauncher();
 		launcher.setJobRepository(jobRepository);
 		launcher.setTaskExecutor(new SimpleAsyncTaskExecutor());
@@ -125,12 +133,12 @@ public class BatchConfiguration {
 	}
 	
 	@Bean
-	public Scheduler schedulerFactoryBean(JobLauncher jobLauncher, JobRegistry jobRegistry, JobFactory jobFactory){
+	public Scheduler schedulerFactoryBean(){
 		SchedulerFactoryBean obj = new SchedulerFactoryBean();
 		Scheduler sch = null; 
 		try {
 			obj.setJobFactory(jobFactory);
-			obj.setTriggers(buildTriggers(jobLauncher, jobRegistry));
+			obj.setTriggers(buildTriggers());
 
 			obj.afterPropertiesSet();
 			
@@ -142,7 +150,7 @@ public class BatchConfiguration {
 		return sch;
 	} 
 	
-	private CronTrigger[] buildTriggers(JobLauncher jobLauncher, JobRegistry jobRegistry) {
+	private CronTrigger[] buildTriggers() {
 		CronTriggerFactoryBean factory = new CronTriggerFactoryBean();		
 		List<CronTrigger> triggers = new ArrayList<CronTrigger>();
 		CronTrigger[] arr = null;
@@ -165,7 +173,7 @@ public class BatchConfiguration {
 	}
 	
 	 
-	private JobDetail createJobDetail(JobLauncher jobLauncher, JobRegistry jobRegistry){
+	private JobDetail createJobDetail(){
 		JobDetailFactoryBean factory = new JobDetailFactoryBean();
 		factory.setName("importUserJob");
 		factory.setJobClass(JobLauncherDetails.class);
@@ -215,14 +223,14 @@ public class BatchConfiguration {
 	}
 	
 	@Bean
-	public Job importUserJob(JobBuilderFactory jobBuilderFactory, StepBuilderFactory stepBuilderFactory, JobCompletionNotificationListener listener){
+	public Job importUserJob(JobCompletionNotificationListener listener){
 		return jobBuilderFactory.get("importUserJob").incrementer(new RunIdIncrementer())
 				.listener(listener)
-				.flow(step1(stepBuilderFactory)).end().build();
+				.flow(step1()).end().build();
 	}
 	
 	@Bean
-	public Step step1(StepBuilderFactory stepBuilderFactory){
+	public Step step1(){
 		return stepBuilderFactory.get("step1").<Person, Person>chunk(10).reader(reader()).processor(processor())
 				.writer(writer()).build();
 	}
