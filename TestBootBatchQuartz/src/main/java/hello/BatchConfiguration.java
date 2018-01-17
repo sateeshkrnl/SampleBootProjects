@@ -157,7 +157,7 @@ public class BatchConfiguration {
 		try {
 			factory.setName("quartaz-trigger");
 			factory.setCronExpression("0 0/1 * * * ?");
-			JobDetail dtl = createJobDetail(jobLauncher, jobRegistry);
+			JobDetail dtl = createJobDetail();
 			
 			factory.setJobDetail(dtl);
 			factory.afterPropertiesSet();
