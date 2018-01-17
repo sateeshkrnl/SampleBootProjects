@@ -1,14 +1,27 @@
 package hello;
 
+import java.text.ParseException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 import javax.sql.DataSource;
 
+import org.quartz.CronTrigger;
+import org.quartz.JobDetail;
+import org.quartz.Scheduler;
+import org.quartz.spi.JobFactory;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.JobRegistry;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
 import org.springframework.batch.core.configuration.support.JobRegistryBeanPostProcessor;
 import org.springframework.batch.core.configuration.support.MapJobRegistry;
+import org.springframework.batch.core.explore.JobExplorer;
+import org.springframework.batch.core.explore.support.SimpleJobExplorer;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.launch.support.SimpleJobLauncher;
@@ -22,37 +35,151 @@ import org.springframework.batch.item.file.mapping.DefaultLineMapper;
 import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
 import org.springframework.batch.support.transaction.ResourcelessTransactionManager;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.scheduling.quartz.CronTriggerFactoryBean;
+import org.springframework.scheduling.quartz.JobDetailFactoryBean;
 import org.springframework.scheduling.quartz.SchedulerFactoryBean;
 
 @Configuration
 @EnableBatchProcessing
 public class BatchConfiguration {
-	@Autowired
+	/*@Autowired
 	private JobBuilderFactory jobBuilderFactory;
 	
 	@Autowired
-	private StepBuilderFactory stepBuilderFactory;
+	private StepBuilderFactory stepBuilderFactory;*/
 	
 	@Autowired
 	private DataSource dataSource;
 	
 	@Bean
-	public SchedulerFactoryBean schedulerFactoryBean(){
-		SchedulerFactoryBean obj = new SchedulerFactoryBean();
-		obj.setJobFactory(new AutowiringSpringBeanJobFactory());
-		//obj.setTriggers(buildTriggers());
-		return obj;
-	} 
+	public JobFactory jobFactory(ApplicationContext context){
+		AutowiringSpringBeanJobFactory jobFactory = new AutowiringSpringBeanJobFactory();
+		jobFactory.setApplicationContext(context);
+		return jobFactory;
+	}
 	
-	/*private CronTriggerBean[] buildTriggers() {
-		// TODO Auto-generated method stub
-		return null;
+	@Bean
+	public MapJobRepositoryFactoryBean  mapJobRepositoryFactory() {
+	    MapJobRepositoryFactoryBean factoryBean = new MapJobRepositoryFactoryBean(new ResourcelessTransactionManager());
+	    try {
+	    	
+	    	factoryBean.afterPropertiesSet();
+	        return factoryBean;
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	        return null;
+	    }
+	}
+	
+	@Bean
+	public JobBuilderFactory jobBuilderFactory(JobRepository jobRepository){
+		JobBuilderFactory factory = new JobBuilderFactory(jobRepository);
+		return factory;
+	}
+	
+	@Bean
+	public StepBuilderFactory stepBuilderFactory(JobRepository jobRepository){
+		StepBuilderFactory factory = new StepBuilderFactory(jobRepository, new DataSourceTransactionManager(dataSource));
+		return factory;
+	}
+	
+	@Bean
+	public JobRegistry jobRegistry(){
+		return new MapJobRegistry();
+	}
+	/*@Bean
+	public JobLocator jobLocator(){
+		SimpleJobLoca
 	}*/
 	
 	@Bean
+	public JobRepository jobRepository(MapJobRepositoryFactoryBean factory) throws Exception {
+		return factory.getObject();
+	}
+	
+	@Bean
+    public JobExplorer jobExplorer(MapJobRepositoryFactoryBean factory) {
+        return new SimpleJobExplorer(factory.getJobInstanceDao(), factory.getJobExecutionDao(),
+                factory.getStepExecutionDao(), factory.getExecutionContextDao());
+    }
+	
+	@Bean
+	JobRegistryBeanPostProcessor jobRegistryBeanPostProcessor() {
+		final JobRegistryBeanPostProcessor processor = new JobRegistryBeanPostProcessor();
+		processor.setJobRegistry(jobRegistry());
+		return processor;
+	}
+
+	@Bean
+	public JobLauncher jobLauncher(JobRepository jobRepository){
+		SimpleJobLauncher launcher = new SimpleJobLauncher();
+		launcher.setJobRepository(jobRepository);
+		launcher.setTaskExecutor(new SimpleAsyncTaskExecutor());
+		return launcher;
+	}
+	
+	@Bean
+	public Scheduler schedulerFactoryBean(JobLauncher jobLauncher, JobRegistry jobRegistry, JobFactory jobFactory){
+		SchedulerFactoryBean obj = new SchedulerFactoryBean();
+		Scheduler sch = null; 
+		try {
+			obj.setJobFactory(jobFactory);
+			obj.setTriggers(buildTriggers(jobLauncher, jobRegistry));
+
+			obj.afterPropertiesSet();
+			
+			sch = obj.getObject();
+			sch.start();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}		
+		return sch;
+	} 
+	
+	private CronTrigger[] buildTriggers(JobLauncher jobLauncher, JobRegistry jobRegistry) {
+		CronTriggerFactoryBean factory = new CronTriggerFactoryBean();		
+		List<CronTrigger> triggers = new ArrayList<CronTrigger>();
+		CronTrigger[] arr = null;
+		try {
+			factory.setName("quartaz-trigger");
+			factory.setCronExpression("0 0/1 * * * ?");
+			JobDetail dtl = createJobDetail(jobLauncher, jobRegistry);
+			
+			factory.setJobDetail(dtl);
+			factory.afterPropertiesSet();
+			CronTrigger trigger = factory.getObject();
+			triggers.add(trigger);
+			arr = new CronTrigger[triggers.size()];
+		} catch (ParseException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		return triggers.toArray(arr);
+	}
+	
+	 
+	private JobDetail createJobDetail(JobLauncher jobLauncher, JobRegistry jobRegistry){
+		JobDetailFactoryBean factory = new JobDetailFactoryBean();
+		factory.setName("importUserJob");
+		factory.setJobClass(JobLauncherDetails.class);
+		factory.setGroup("quartz-batch");
+		Map jobDataAsMap = new HashMap<String, Object>();
+		jobDataAsMap.put("jobName", "importUserJob");
+		jobDataAsMap.put("jobLocator", jobRegistry);
+		jobDataAsMap.put("jobLauncher", jobLauncher);
+		jobDataAsMap.put("param1", "mkyong");
+		factory.setJobDataAsMap(jobDataAsMap);
+		factory.afterPropertiesSet();
+		return factory.getObject();		
+	}
+	
 	public FlatFileItemReader<Person> reader(){
 		FlatFileItemReader<Person> reader = new FlatFileItemReader<Person>();
 		reader.setResource(new ClassPathResource("sample-data.csv"));		
@@ -88,14 +215,14 @@ public class BatchConfiguration {
 	}
 	
 	@Bean
-	public Job importUserJob(JobCompletionNotificationListener listener){
+	public Job importUserJob(JobBuilderFactory jobBuilderFactory, StepBuilderFactory stepBuilderFactory, JobCompletionNotificationListener listener){
 		return jobBuilderFactory.get("importUserJob").incrementer(new RunIdIncrementer())
 				.listener(listener)
-				.flow(step1()).end().build();
+				.flow(step1(stepBuilderFactory)).end().build();
 	}
 	
 	@Bean
-	public Step step1(){
+	public Step step1(StepBuilderFactory stepBuilderFactory){
 		return stepBuilderFactory.get("step1").<Person, Person>chunk(10).reader(reader()).processor(processor())
 				.writer(writer()).build();
 	}
