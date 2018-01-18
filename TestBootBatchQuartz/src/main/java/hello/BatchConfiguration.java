@@ -166,7 +166,9 @@ public class BatchConfiguration {
 			arr = new CronTrigger[triggers.size()];
 		} catch (ParseException e) {
 			// TODO Auto-generated catch block
-			e.printStackTrace();
+			if(1){
+				e.printStackTrace();
+			}
 		}
 		
 		return triggers.toArray(arr);
