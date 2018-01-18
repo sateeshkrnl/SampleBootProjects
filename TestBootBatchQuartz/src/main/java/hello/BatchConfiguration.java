@@ -231,7 +231,10 @@ public class BatchConfiguration {
 	
 	@Bean
 	public Step step1(){
-		return stepBuilderFactory.get("step1").<Person, Person>chunk(10).reader(reader()).processor(processor())
+		return stepBuilderFactory.get("step1").
+				<Person, Person>chunk(10)
+				.reader(reader())
+				.processor(processor())
 				.writer(writer()).build();
 	}
 	
